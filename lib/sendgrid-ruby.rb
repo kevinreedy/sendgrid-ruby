@@ -1,3 +1,4 @@
+require_relative 'sendgrid/batch'
 require_relative 'sendgrid/client'
 require_relative 'sendgrid/exceptions'
 require_relative 'sendgrid/recipient'
