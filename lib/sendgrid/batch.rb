@@ -2,7 +2,7 @@ require 'faraday'
 
 module SendGrid
   class Batch
-    attr_accessor :api_user, :api_key, :protocol, :host, :port, :url, :endpoint,
+    attr_accessor :api_user, :api_key, :protocol, :host, :port, :url,
                   :user_agent, :id
     attr_writer :adapter, :conn, :raise_exceptions
 
@@ -13,18 +13,17 @@ module SendGrid
       self.host             = params.fetch(:host, 'api.sendgrid.com')
       self.port             = params.fetch(:port, nil)
       self.url              = params.fetch(:url, protocol + '://' + host + (port ? ":#{port}" : ''))
-      self.endpoint         = params.fetch(:endpoint, '/v3/mail/batch')
       self.adapter          = params.fetch(:adapter, adapter)
       self.conn             = params.fetch(:conn, conn)
       self.user_agent       = params.fetch(:user_agent, "sendgrid/#{SendGrid::VERSION};ruby")
       self.raise_exceptions = params.fetch(:raise_exceptions, true)
+      self.id               = params.fetch(:id, id)
       yield self if block_given?
     end
 
     def generate
       res = conn.post do |req|
-        payload = {}
-        req.url(endpoint)
+        req.url('/v3/mail/batch')
 
         # Check if using username + password or API key
         if api_user
@@ -35,7 +34,7 @@ module SendGrid
           req.headers['Authorization'] = "Bearer #{api_key}"
         end
 
-        req.body = payload
+        req.body = {}
       end
 
       fail SendGrid::Exception, res.body if raise_exceptions? && res.status != 201
@@ -43,6 +42,29 @@ module SendGrid
       sg_res = SendGrid::Response.new(code: res.status, headers: res.headers, body: res.body)
       self.id = sg_res.body['batch_id']
       id
+    end
+
+    def cancel
+      fail SendGrid::Exception, 'Batch has no ID' if raise_exceptions? && !id
+
+      res = conn.post do |req|
+        req.url('/v3/user/scheduled_sends')
+
+        # Check if using username + password or API key
+        if api_user
+          # Username + password
+          req.headers['Authorization'] = "Basic #{ Base64.encode64(api_user + ':' + api_key) }"
+        else
+          # API key
+          req.headers['Authorization'] = "Bearer #{api_key}"
+        end
+        req.headers['Content-Type'] = 'application/json'
+        req.body = { batch_id: id, status: 'cancel' }.to_json
+      end
+
+      fail SendGrid::Exception, res.body if raise_exceptions? && res.status != 201
+
+      SendGrid::Response.new(code: res.status, headers: res.headers, body: res.body)
     end
 
     def conn
